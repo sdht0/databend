@@ -31,13 +31,15 @@ mod dummy {
     use databend_common_ast::parser::Dialect;
     use sqlparser::dialect::PostgreSqlDialect;
     use sqlparser::parser::Parser;
+    use turso_parser::parser::Parser as TursoParser;
 
     const DATAFUSION_DIALECT: PostgreSqlDialect = PostgreSqlDialect {};
+    const DATABEND_DIALECT: Dialect = Dialect::PostgreSQL;
 
     #[divan::bench]
     fn select_datafusion() {
         let case = r#"SELECT * FROM my_table WHERE 1 = 1;"#;
-        let stmt = Parser::parse_sql(&PostgreSqlDialect {}, case).unwrap();
+        let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, case).unwrap();
         divan::black_box(stmt);
     }
 
@@ -45,7 +47,14 @@ mod dummy {
     fn select_databend() {
         let case = r#"SELECT * FROM my_table WHERE 1 = 1;"#;
         let tokens = tokenize_sql(case).unwrap();
-        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        let (stmt, _) = parse_sql(&tokens, DATABEND_DIALECT).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn select_turso() {
+        let case = r#"SELECT * FROM my_table WHERE 1 = 1;"#;
+        let stmt = TursoParser::new(std::hint::black_box(case.as_bytes())).next().unwrap().unwrap();
         divan::black_box(stmt);
     }
 
@@ -80,7 +89,24 @@ mod dummy {
             LEFT JOIN derived USING (user_id)
         ";
         let tokens = tokenize_sql(case).unwrap();
-        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        let (stmt, _) = parse_sql(&tokens, DATABEND_DIALECT).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn with_select_turso() {
+        let case = "
+            WITH derived AS (
+                SELECT MAX(a) AS max_a,
+                       COUNT(b) AS b_num,
+                       user_id
+                FROM MY_TABLE
+                GROUP BY user_id
+            )
+            SELECT * FROM my_table
+            LEFT JOIN derived USING (user_id)
+        ";
+        let stmt = TursoParser::new(std::hint::black_box(case.as_bytes())).next().unwrap().unwrap();
         divan::black_box(stmt);
     }
 
@@ -137,37 +163,79 @@ mod dummy {
             )
         };
         let tokens = tokenize_sql(&case).unwrap();
-        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        let (stmt, _) = parse_sql(&tokens, DATABEND_DIALECT).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_1_turso() {
+        let case = {
+            let expressions = (0..1000)
+                .map(|n| format!("FN_{n}(COL_{n})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let tables = (0..1000)
+                .map(|n| format!("TABLE_{n}"))
+                .collect::<Vec<_>>()
+                .join(" JOIN ");
+            let where_condition = (0..1000)
+                .map(|n| format!("COL_{n} = {n}"))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            let order_condition = (0..1000)
+                .map(|n| format!("COL_{n} DESC"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            format!(
+                "SELECT {expressions} FROM {tables} WHERE {where_condition} ORDER BY {order_condition}"
+            )
+        };
+        let stmt = TursoParser::new(std::hint::black_box(case.as_bytes())).next().unwrap().unwrap();
         divan::black_box(stmt);
     }
 
     #[divan::bench]
     fn large_statement_2_datafusion() {
-        let case = r#"explain SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
+        let case = r#"explain SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))))as count FROM t0) as res;"#;
         let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, case).unwrap();
         divan::black_box(stmt);
     }
 
     #[divan::bench]
     fn large_statement_2_databend() {
-        let case = r#"explain SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
+        let case = r#"explain SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))))as count FROM t0) as res;"#;
         let tokens = tokenize_sql(case).unwrap();
-        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        let (stmt, _) = parse_sql(&tokens, DATABEND_DIALECT).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_2_turso() {
+        let case = r#"explain SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))))as count FROM t0) as res;"#;
+        let stmt = TursoParser::new(std::hint::black_box(case.as_bytes())).next().unwrap().unwrap();
         divan::black_box(stmt);
     }
 
     #[divan::bench]
     fn large_statement_3_datafusion() {
-        let case = r#"SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
+        let case = r#"SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))))as count FROM t0) as res;"#;
         let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, case).unwrap();
         divan::black_box(stmt);
     }
 
     #[divan::bench]
     fn large_statement_3_databend() {
-        let case = r#"SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
+        let case = r#"SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))))as count FROM t0) as res;"#;
         let tokens = tokenize_sql(case).unwrap();
-        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        let (stmt, _) = parse_sql(&tokens, DATABEND_DIALECT).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_3_turso() {
+        let case = r#"SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))))as count FROM t0) as res;"#;
+        let stmt = TursoParser::new(std::hint::black_box(case.as_bytes())).next().unwrap().unwrap();
         divan::black_box(stmt);
     }
 
@@ -182,7 +250,15 @@ mod dummy {
     fn deep_query_databend() {
         let case = r#"SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers"#;
         let tokens = tokenize_sql(case).unwrap();
-        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        let (stmt, _) = parse_sql(&tokens, DATABEND_DIALECT).unwrap();
         divan::black_box(stmt);
     }
+
+    #[divan::bench]
+    fn deep_query_turso() {
+        let case = r#"SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers"#;
+        let stmt = TursoParser::new(std::hint::black_box(case.as_bytes())).next().unwrap().unwrap();
+        divan::black_box(stmt);
+    }
+
 }

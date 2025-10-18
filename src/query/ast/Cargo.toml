@@ -38,7 +38,7 @@ url = { workspace = true }
 divan = { workspace = true }
 goldenfile = { workspace = true }
 sqlparser = "0.59"
-turso = { path = "../../../../turso/parser" }
+turso_parser = "0.2"
 
 [[bench]]
 name = "bench"
