@@ -3014,6 +3014,7 @@ dependencies = [
  "rspack-codespan-reporting",
  "serde",
  "serde_json",
+ "sqlparser 0.59.0",
  "strsim 0.10.0",
  "strum 0.24.1",
  "strum_macros 0.24.3",
@@ -14355,6 +14356,16 @@ name = "sqlparser"
 version = "0.56.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e68feb51ffa54fc841e086f58da543facfe3d7ae2a60d69b0a8cbbd30d16ae8d"
+dependencies = [
+ "log",
+ "recursive",
+]
+
+[[package]]
+name = "sqlparser"
+version = "0.59.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4591acadbcf52f0af60eafbb2c003232b2b4cd8de5f0e9437cb8b1b59046cc0f"
 dependencies = [
  "log",
  "recursive",

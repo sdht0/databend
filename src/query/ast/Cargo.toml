@@ -37,6 +37,8 @@ url = { workspace = true }
 [dev-dependencies]
 divan = { workspace = true }
 goldenfile = { workspace = true }
+sqlparser = "0.59"
+turso = { path = "../../../../turso/parser" }
 
 [[bench]]
 name = "bench"

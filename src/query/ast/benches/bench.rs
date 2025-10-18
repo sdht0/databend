@@ -26,13 +26,130 @@ fn main() {
 
 #[divan::bench_group(max_time = 0.5)]
 mod dummy {
-    use databend_common_ast::parser::parse_expr;
     use databend_common_ast::parser::parse_sql;
     use databend_common_ast::parser::tokenize_sql;
     use databend_common_ast::parser::Dialect;
+    use sqlparser::dialect::PostgreSqlDialect;
+    use sqlparser::parser::Parser;
+
+    const DATAFUSION_DIALECT: PostgreSqlDialect = PostgreSqlDialect {};
 
     #[divan::bench]
-    fn large_statement() {
+    fn select_datafusion() {
+        let case = r#"SELECT * FROM my_table WHERE 1 = 1;"#;
+        let stmt = Parser::parse_sql(&PostgreSqlDialect {}, case).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn select_databend() {
+        let case = r#"SELECT * FROM my_table WHERE 1 = 1;"#;
+        let tokens = tokenize_sql(case).unwrap();
+        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn with_select_datafusion() {
+        let case = "
+            WITH derived AS (
+                SELECT MAX(a) AS max_a,
+                       COUNT(b) AS b_num,
+                       user_id
+                FROM MY_TABLE
+                GROUP BY user_id
+            )
+            SELECT * FROM my_table
+            LEFT JOIN derived USING (user_id)
+        ";
+        let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, case).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn with_select_databend() {
+        let case = "
+            WITH derived AS (
+                SELECT MAX(a) AS max_a,
+                       COUNT(b) AS b_num,
+                       user_id
+                FROM MY_TABLE
+                GROUP BY user_id
+            )
+            SELECT * FROM my_table
+            LEFT JOIN derived USING (user_id)
+        ";
+        let tokens = tokenize_sql(case).unwrap();
+        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_1_datafusion() {
+        let case = {
+            let expressions = (0..1000)
+                .map(|n| format!("FN_{n}(COL_{n})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let tables = (0..1000)
+                .map(|n| format!("TABLE_{n}"))
+                .collect::<Vec<_>>()
+                .join(" JOIN ");
+            let where_condition = (0..1000)
+                .map(|n| format!("COL_{n} = {n}"))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            let order_condition = (0..1000)
+                .map(|n| format!("COL_{n} DESC"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            format!(
+                "SELECT {expressions} FROM {tables} WHERE {where_condition} ORDER BY {order_condition}"
+            )
+        };
+        let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, &case).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_1_databend() {
+        let case = {
+            let expressions = (0..1000)
+                .map(|n| format!("FN_{n}(COL_{n})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            let tables = (0..1000)
+                .map(|n| format!("TABLE_{n}"))
+                .collect::<Vec<_>>()
+                .join(" JOIN ");
+            let where_condition = (0..1000)
+                .map(|n| format!("COL_{n} = {n}"))
+                .collect::<Vec<_>>()
+                .join(" OR ");
+            let order_condition = (0..1000)
+                .map(|n| format!("COL_{n} DESC"))
+                .collect::<Vec<_>>()
+                .join(", ");
+
+            format!(
+                "SELECT {expressions} FROM {tables} WHERE {where_condition} ORDER BY {order_condition}"
+            )
+        };
+        let tokens = tokenize_sql(&case).unwrap();
+        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_2_datafusion() {
+        let case = r#"explain SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
+        let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, case).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_2_databend() {
         let case = r#"explain SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
         let tokens = tokenize_sql(case).unwrap();
         let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
@@ -40,7 +157,14 @@ mod dummy {
     }
 
     #[divan::bench]
-    fn large_query() {
+    fn large_statement_3_datafusion() {
+        let case = r#"SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
+        let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, case).unwrap();
+        divan::black_box(stmt);
+    }
+
+    #[divan::bench]
+    fn large_statement_3_databend() {
         let case = r#"SELECT SUM(count) FROM (SELECT ((((((((((((true)and(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))or((('780820706')=('')))) IS NOT NULL AND ((((((((((true)AND(true)))or((('614')like('998831')))))or(false)))and((true IN (true, true, (-1014651046 NOT BETWEEN -1098711288 AND -1158262473))))))OR((('780820706')=(''))))) ::INT64)as count FROM t0) as res;"#;
         let tokens = tokenize_sql(case).unwrap();
         let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
@@ -48,26 +172,17 @@ mod dummy {
     }
 
     #[divan::bench]
-    fn deep_query() {
+    fn deep_query_datafusion() {
         let case = r#"SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers"#;
-        let tokens = tokenize_sql(case).unwrap();
-        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        let stmt = Parser::parse_sql(&DATAFUSION_DIALECT, case).unwrap();
         divan::black_box(stmt);
     }
 
     #[divan::bench]
-    fn wide_expr() {
-        let case = r#"a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a AND a"#;
+    fn deep_query_databend() {
+        let case = r#"SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers UNION ALL SELECT * FROM numbers"#;
         let tokens = tokenize_sql(case).unwrap();
-        let expr = parse_expr(&tokens, Dialect::PostgreSQL).unwrap();
-        divan::black_box(expr);
-    }
-
-    #[divan::bench]
-    fn deep_function_call() {
-        let case = r#"json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert(json_object_insert('{}'::variant, 'email_address', 'gokul', true), 'home_phone', 12345, true), 'mobile_phone', 345678, true), 'race_code', 'M', true), 'race_desc', 'm', true), 'marital_status_code', 'y', true), 'marital_status_desc', 'yu', true), 'prefix', 'hj', true), 'first_name', 'g', true), 'last_name', 'p', true), 'deceased_date', '2085-05-07', true), 'birth_date', '6789', true), 'middle_name', '89', true), 'middle_initial', '0789', true), 'gender_code', '56789', true), 'gender_desc', 'm', true), 'home_phone_line_type', 'uyt', true), 'mobile_phone_line_type', 4, true)"#;
-        let tokens = tokenize_sql(case).unwrap();
-        let expr = parse_expr(&tokens, Dialect::PostgreSQL).unwrap();
-        divan::black_box(expr);
+        let (stmt, _) = parse_sql(&tokens, Dialect::PostgreSQL).unwrap();
+        divan::black_box(stmt);
     }
 }
